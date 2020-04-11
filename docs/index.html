@@ -1,0 +1,73 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>goray</title>
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+<style>
+
+body {
+  background-color: #222;
+  color: white;
+  margin: 0;
+  overflow: hidden;
+  font: 12px sans-serif;
+}
+
+#loading-message {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+  #loading-message > p {
+    padding: 1em 1.5em;
+    background: white;
+    color: black;
+    border-radius: 2px;
+  }
+
+:root.app-loading #loading-message {
+  display: flex;
+}
+
+</style>
+<script type="text/javascript">(()=>{
+
+const version = /*VERSION*/"87f711f493c11d6921594f708de9c2321180cc6e"/*VERSION*/
+const isDev = document.location.hostname in {"127.0.0.1":1,"localhost":1}
+const appPath = isDev ? "app-dev" : "app"
+const v = isDev ? Date.now() : version
+
+const loadingTimer = setTimeout(()=>{
+  document.documentElement.classList.add("app-loading")
+},200)
+function onLoaded() {
+  clearTimeout(loadingTimer)
+  document.documentElement.classList.remove("app-loading")
+}
+
+window._appinit = {
+  wasmFetch: fetch(appPath + "/main.wasm?"+v),
+  time:      Date.now(),
+  onLoaded:  onLoaded,
+}
+
+for (let src of ["golib.js", appPath + "/host.js?" + v]) {
+  let script = document.createElement("script")
+  script.src = src
+  document.head.appendChild(script)
+}
+
+})()</script>
+</head>
+<body>
+  <div id="loading-message"><p>Loading...</p></div>
+  <canvas width="640" height="480"></canvas>
+</body>
+</html>
