@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>goray</title>
+  <title>goscene</title>
   <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
 <style>
 
@@ -38,31 +38,30 @@ body {
 
 </style>
 <script type="text/javascript">(()=>{
-
-const version = /*VERSION*/"87f711f493c11d6921594f708de9c2321180cc6e"/*VERSION*/
-const isDev = document.location.hostname in {"127.0.0.1":1,"localhost":1}
-const appPath = isDev ? "app-dev" : "app"
-const v = isDev ? Date.now() : version
-
-const loadingTimer = setTimeout(()=>{
-  document.documentElement.classList.add("app-loading")
-},200)
-function onLoaded() {
-  clearTimeout(loadingTimer)
-  document.documentElement.classList.remove("app-loading")
+// app initialization data
+const a = window._appinit = {
+  time: Date.now(),
+  version: /*VERSION*/"6e46ef6447a373601515e3d78de44feac3cf41dc"/*VERSION*/,
+  srcPath: "app",
 }
-
-window._appinit = {
-  wasmFetch: fetch(appPath + "/main.wasm?"+v),
-  time:      Date.now(),
-  onLoaded:  onLoaded,
+if (document.location.hostname == "localhost") {
+  a.srcPath = "app-dev"
+  a.version = Date.now()
 }
+a.wasmFetch = fetch(a.srcPath + "/main.wasm?" + a.version)
 
-for (let src of ["golib.js", appPath + "/host.js?" + v]) {
-  let script = document.createElement("script")
-  script.src = src
-  document.head.appendChild(script)
-}
+// "Loading..." message
+const cl = document.documentElement.classList
+const loadingTimer = setTimeout(()=>{ cl.add("app-loading") },200)
+a.onLoaded = () => { clearTimeout(loadingTimer) ; cl.remove("app-loading") }
+
+})()</script>
+<script src="golib.js"></script>
+<script type="text/javascript">(()=>{
+
+let script = document.createElement("script")
+script.src = window._appinit.srcPath + "/host.js?" + window._appinit.version
+document.head.appendChild(script)
 
 })()</script>
 </head>
