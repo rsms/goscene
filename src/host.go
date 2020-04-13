@@ -3,7 +3,6 @@ package main
 import (
   "syscall/js"
   "bytes"
-  "encoding/binary"
   "unsafe"
 )
 
@@ -86,6 +85,19 @@ func (e Event) String() string {
 }
 
 
+var host = CreateHostEnv(js.Global().Get("_appinit").Get("host"))
+
+func Monotime() float64 { return host.Monotime() }
+func Time() float64 { return host.Time() }
+
+
+type Pointer struct {
+  id      int      // system-specific unique identifier for the virtual pointer device
+  x, y    float32  // position in display points
+  buttons uint32   // bitmask of buttons' depressed state. 0 = none, 1 = left, 2 = right, 4 ...
+}
+
+
 type HostEnv struct {
   jsv             js.Value
   windowWidth     uint32    // width of host window in display points
@@ -94,10 +106,10 @@ type HostEnv struct {
   copyBuffer      bytes.Buffer  // local buffer for copying values to JS
   jsCopyBufferU8  js.Value  // remote buffer
   jsCopyBufferF32 js.Value  // remote buffer
-  pointerPos      Vec2      // position of pointer in window space (display points)
   runloopStopCh   chan bool // used by RunLoop() to signal stop
   events          EventSource
   scenetime       float32   // monotonically incrementing time, in seconds
+  pointer         Pointer
 
   // // Events (legacy)
   // onWindowResize  EventSource
@@ -132,6 +144,26 @@ func CreateHostEnv(jsv js.Value) *HostEnv {
     h.windowWidth, h.windowHeight = xy[0], xy[1]
   })
 
+  // Track mouse pointer
+  h.pointer.id = -1
+  onPointerEvent := func (_ Event, data ...uint32) {
+    // data = [ pointerId, x, y, buttons ]
+    // Note: /10 is a constant that is matched in host.js's handlePointerEvent
+    id := int(data[0])
+    if h.pointer.id == -1 {
+      h.pointer.id = id
+    } else if h.pointer.id != id {
+      // ignore non-primary pointer
+      return
+    }
+    h.pointer.x = float32(data[1]) / 10
+    h.pointer.y = float32(data[2]) / 10
+    h.pointer.buttons = data[3]
+  }
+  h.events.Listen(EVPointerMove, onPointerEvent)
+  h.events.Listen(EVPointerDown, onPointerEvent)
+  h.events.Listen(EVPointerUp, onPointerEvent)
+
   /*// XXX test hostcall
   r := hostcall_vi32_i32(123, 111, 222, 333, 444)
   logf("hostcall_vi32_i32(123) => %v", r)
@@ -159,6 +191,11 @@ func (h *HostEnv) eventUnsubscribe(ev Event) {
 
 
 func (h *HostEnv) Monotime() float64 {
+  // Note: float32 as seconds gives us 97 days before we completely run out of precision.
+  // A float32 for seconds will run out of millisecond precision after about 24 days (2095000s)
+  // since IEEE 754 float has 23 bits of mantissa, (2^23)/60/60/24 = 97 days.
+  // A flaot64 for seconds means we can keep running "forever" without precision loss, or
+  // 142 808 207 years.
   return hostcall__f64(HMonotime)
 }
 
@@ -176,6 +213,10 @@ func (h *HostEnv) getWindowSize() (width, height uint32) {
 
 func (h *HostEnv) ReadRandom(buf []byte) int {
   return int(hostcall_vu8_i32(HReadRandom, buf...))
+}
+
+func (h *HostEnv) dispatchEvent(ev Event, data []uint32) {
+  h.events.Trigger(ev, data...)
 }
 
 
@@ -239,14 +280,14 @@ func (h *HostEnv) RunLoop() {
       // logf("got event %v valcount=%v", ev, valcount)
 
       if valcount == 0 {
-        h.events.Trigger(ev)
+        h.dispatchEvent(ev, nil)
       } else {
         if valcount > MAX_VALCOUNT {
           logf("[RunLoop] warning: received event data larger than MAX_VALCOUNT")
           valcount = MAX_VALCOUNT
         }
         a := *(*[MAX_VALCOUNT]uint32)(unsafe.Pointer(dataptr))
-        h.events.Trigger(ev, a[:valcount]...)
+        h.dispatchEvent(ev, a[:valcount])
         dataptr += uintptr(valcount) * 4
       }
     }
@@ -274,27 +315,3 @@ func (h *HostEnv) log(e... interface{}) {
   h.jsv.Call("log", e...)
 }
 
-
-func (h *HostEnv) createFloat32Array(values []float32) js.Value {
-  h.copyBuffer.Reset()
-  // TODO: make sure we don't write more than h.copyBuffer.Cap()
-  for _, f := range values {
-    err := binary.Write(&h.copyBuffer, binary.LittleEndian, f)
-    if err != nil {
-      panic(err)
-    }
-  }
-  js.CopyBytesToJS(h.jsCopyBufferU8, h.copyBuffer.Bytes())
-  return h.jsCopyBufferF32.Call("slice", 0, len(values))
-}
-
-
-func (h *HostEnv) tmpFloat32Array16(values [16]float32) js.Value {
-  // return h.createFloat32Array(values[:])
-  buf := *(*[64]byte)(unsafe.Pointer(&values))
-  js.CopyBytesToJS(h.jsCopyBufferU8, buf[:])
-  return h.jsCopyBufferF32.Call("subarray", 0, 16)
-}
-
-
-var host = CreateHostEnv(js.Global().Get("_appinit").Get("host"))

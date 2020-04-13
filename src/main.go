@@ -25,16 +25,8 @@ func main() {
 
   // resize canvas when window size changes
   host.events.Listen(EVWindowResize, func (ev Event, xy ...uint32) {
-    logf("R window resized %d, %d, %f", host.windowWidth, host.windowHeight, host.pixelRatio)
+    logf("window resized %d, %d, %f", host.windowWidth, host.windowHeight, host.pixelRatio)
     r.setSize(host.windowWidth, host.windowHeight, host.pixelRatio)
-  })
-
-  host.events.Listen(EVPointerDown, func (ev Event, xy ...uint32) {
-    logf("event EVPointerDown %v", xy)
-  })
-
-  host.events.Listen(EVPointerUp, func (ev Event, xy ...uint32) {
-    logf("event EVPointerUp %v", xy)
   })
 
   // signal to host that initialization is complete

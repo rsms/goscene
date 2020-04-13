@@ -7,6 +7,9 @@ import (
 
 const PI = math.Pi
 
+const IntSize uint = 32 << (^uint(0) >> 63)  // bits of int on target platform
+const UintMax uint = ^uint(0)
+
 // func checkJSNotNull(v js.Value) {
 // 	if v.IsNull() {
 // 		panic("unexpected null js.Value")
@@ -33,4 +36,10 @@ func max(x, y int) int {
     return x
   }
   return y
+}
+
+func assert(cond bool) {
+	if !cond {
+		panic("assertion error")
+	}
 }

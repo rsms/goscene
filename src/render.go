@@ -2,7 +2,7 @@ package main
 
 import (
   "syscall/js"
-  "github.com/go-gl/mathgl/mgl32"
+  "math"
 )
 
 type Renderer struct {
@@ -68,13 +68,13 @@ precision mediump float;
 #endif
 
 uniform vec2  uResolution;  // Canvas size, viewport resolution (in pixels)
-uniform vec2  uPointer;     // mouse pointer pixel coords. xy: current, zw: click
+uniform vec3  uPointer;     // mouse pointer pixel coords. xy: current, z: click
 uniform float uTime;        // Time in seconds since load
 
 void main() {
   vec2 st = gl_FragCoord.xy / uResolution;
-  vec2 pointer = 1.0 - uPointer / uResolution;
-  gl_FragColor = vec4(st.x * pointer.x, st.y * pointer.y, abs(sin(uTime)), 1.0);
+  vec2 pointer = 1.0 - vec2(uPointer) / uResolution;
+  gl_FragColor = vec4(st.x * pointer.x, st.y * pointer.y + uPointer.z, abs(sin(uTime)), 1.0);
 }
 `;
 
@@ -88,7 +88,7 @@ var (
 
   // fragment shader
   uResolution      GLUniform // vec2  // Canvas size, viewport resolution (in pixels)
-  uPointer         GLUniform // vec2  // Pointer pixel coords
+  uPointer         GLUniform // vec3  // Pointer pixel coords
   uTime            GLUniform // float // Time in seconds since load
 
   positionBuffer   GLBuffer
@@ -122,24 +122,11 @@ func (r *Renderer) init() {
 
   positionBuffer = r.initBuffers()
 
-  // track mouse pointer
-  host.events.Listen(EVPointerMove, func (_ Event, xy ...uint32) {
-    x := float32(xy[0]) * r.pixelRatio
-    y := float32(xy[1]) * r.pixelRatio
-    r.onPointerMove(x, y)
-  })
-
   host.events.Listen(EVAnimationFrame, func (_ Event, _ ...uint32) {
     r.render(host.scenetime)
   })
 
   r.render(0.0)
-}
-
-func (r *Renderer) onPointerMove(x, y float32) {
-  // logf("Renderer.onPointerMove %v, %v", x, y)
-  // r.gl.useProgram(program)
-  r.gl.uniformf(uPointer, x, y)
 }
 
 
@@ -187,27 +174,6 @@ func (r *Renderer) render(time float32) {
   // Clear the canvas before we start drawing on it.
   gl.clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT)
 
-  // Create a perspective matrix, a special matrix that is
-  // used to simulate the distortion of perspective in a camera.
-  // Our field of view is 45 degrees, with a width/height
-  // ratio that matches the display size of the canvas
-  // and we only want to see objects between 0.1 units
-  // and 100 units away from the camera.
-  const fov   float32 = 45.0 * (PI / 180.0)   // in radians
-  const zNear float32 = 0.1
-  const zFar  float32 = 100.0
-  aspect := width / height
-  projectionMatrix := mgl32.Perspective(fov, aspect, zNear, zFar)
-
-  // Set the drawing position to the "identity" point, which is
-  // the center of the scene.
-  modelViewMatrix := mgl32.Ident4()
-
-  // Now move the drawing position a bit to where we want to
-  // start drawing the square.
-  // translate(&modelViewMatrix, 0.0, 0.0, -6)
-  translateZ(&modelViewMatrix, -6)
-
   // Tell WebGL how to pull out the positions from the position buffer into the
   // aVertexPosition attribute.
   gl.bindBuffer(ARRAY_BUFFER, positionBuffer)
@@ -224,10 +190,51 @@ func (r *Renderer) render(time float32) {
   // Tell WebGL to use our program when drawing
   gl.useProgram(program)
 
-  // Set the shader uniforms
+  // Pointer
+  clicked := float32(0.0)
+  pointerX := host.pointer.x * r.pixelRatio
+  pointerY := host.pointer.y * r.pixelRatio
+  if host.pointer.buttons != 0 {
+    clicked = 1.0
+  }
+  gl.uniformf(uPointer, pointerX, pointerY, clicked)
+
+  // Create a perspective matrix, a special matrix that is
+  // used to simulate the distortion of perspective in a camera.
+  // Our field of view is 45 degrees, with a width/height
+  // ratio that matches the display size of the canvas
+  // and we only want to see objects between 0.1 units
+  // and 100 units away from the camera.
+  const fov   float32 = 65.0 * (PI / 180.0)   // in radians
+  const zNear float32 = 0.1
+  const zFar  float32 = 100.0
+  aspect := width / height
+  projectionMatrix := Matrix4Perspective(fov, aspect, zNear, zFar)
+
+  // Set the drawing position to the "identity" point, which is
+  // the center of the scene.
+  modelViewMatrix := Matrix4Identity
+
+  // Now move the drawing position a bit to where we want to
+  // start drawing the square.
+  // translate(&modelViewMatrix, 0.0, 0.0, -6)
+  // modelViewMatrix.TranslateZMut(-3 * (pointerY / r.resolution[1]))
+  modelViewMatrix.TranslateZMut(-3)
+
+  // modelViewMatrix = modelViewMatrix.Rotate(time, 0.0, 0.0, 1.0)
+  // modelViewMatrix = modelViewMatrix.Rotate(time, 0.0, 1.0, 0.0)
+  // modelViewMatrix = modelViewMatrix.Rotate(time, 1.0, 0.0, 0.0)
+
+  // modelViewMatrix.RotateXMut((pointerY / r.resolution[1]) * math.Pi)
+  modelViewMatrix.RotateYMut((pointerX / r.resolution[0]) * math.Pi)
+  modelViewMatrix.RotateZMut((pointerY / r.resolution[1]) * math.Pi)
+
+
+  // Set the shader uniform values
   gl.uniformMatrix4fv(uProjectionMatrix, false, projectionMatrix)
   gl.uniformMatrix4fv(uModelViewMatrix, false, modelViewMatrix)
 
+  // Set time and resolution uniform values
   gl.uniformf(uTime, time)
   gl.uniformf(uResolution, r.resolution[0], r.resolution[1])
 

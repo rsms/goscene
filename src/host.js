@@ -558,12 +558,15 @@ const host = new class Host {
       disable() { h.disablePersistentEvent(ev) },
     })
 
+    // handlePointerEvent translates a PointerEvent into data that is sent to WASM.
+    // Note: Changing this requires changes to host.go
+    const handlePointerEvent = ev => [ ev.pointerId, ev.x*10, ev.y*10, ev.buttons ]
 
     // all supported events
     h.events = {
-      [EVPointerMove]:  jsEvent(window, "pointermove", ev => [ev.x, ev.y] ),
-      [EVPointerDown]:  jsEvent(window, "pointerdown", ev => [ev.x, ev.y] ),
-      [EVPointerUp]:    jsEvent(window, "pointerup",   ev => [ev.x, ev.y] ),
+      [EVPointerMove]:  jsEvent(window, "pointermove", handlePointerEvent),
+      [EVPointerDown]:  jsEvent(window, "pointerdown", handlePointerEvent),
+      [EVPointerUp]:    jsEvent(window, "pointerup",   handlePointerEvent),
       [EVWindowResize]: jsEvent(window, "resize", ev => [window.innerWidth, window.innerHeight] ),
 
       [EVAnimationFrame]: persistentEvent(EVAnimationFrame),
