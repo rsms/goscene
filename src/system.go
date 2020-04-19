@@ -139,7 +139,7 @@ func (n *TransformNode) SetLocal(m *Matrix4) {
 }
 
 func (n *TransformNode) Translate(x, y, z float32) {
-  n.local.TranslateMut(x, y, z)
+  n.local.Translate(x, y, z)
   n.markDirty()
 }
 

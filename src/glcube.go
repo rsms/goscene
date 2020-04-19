@@ -98,21 +98,24 @@ func (o *GLCube) Draw(r *Renderer) {
 	// enable program
 	gl.useProgram(o.program)
 
+
   // set model view matrix
 	tm := o.absoluteTransform
 
 	time := float32(host.scenetime)
   // tm = tm.WithRotation(time, 0.0, 0.0, 1.0)
   // tm = tm.WithRotation(time, 0, 1, 0.5)
+  tm.Translate(sin32(time*0.5) * 1.0, cos32(time) * 1.5, 0.0)
   tm.Rotate(sin32(time * 0.8), cos32(time * 0.5), time * 2)
 
   // tm.RotateX((r.pointer[1] / r.resolution[1]) * PI)
   tm.RotateY((r.pointer[0] / r.resolution[0]) * PI)
   tm.RotateZ((r.pointer[1] / r.resolution[1]) * PI)
 
-  tm.Scale(1.0, 0.5, 0.5)
+  tm.Scale(0.2 + abs32(sin32(time)), 0.2 + abs32(cos32(time)), 0.5)
 
   gl.uniformMatrix4fv(o.uModelViewMatrix, false, tm)
+
 
   gl.drawElements(GL_TRIANGLES, /*vertexCount*/ 36, GL_UNSIGNED_SHORT, /*offset*/ 0)
 }

@@ -159,16 +159,15 @@ func (r *Renderer) init() {
   var err error
   planeobj, err = NewGLPlane(program)
   planeobj2, err = NewGLPlane(program)
-  planeobj2.absoluteTransform.TranslateMut(0.4, 0.4, -1.0)
-  planeobj2.absoluteTransform.RotateZ(1.0)
+  planeobj2.absoluteTransform.Translate(0.4, 0.4, -1.0).RotateZ(1.0)
 
   // make cubes
   cubeobj1, err = NewGLCube(cubeProgram)
-  cubeobj1.absoluteTransform.TranslateMut(0, 0, -5.5)
+  cubeobj1.absoluteTransform.Translate(0, 0, -5.5)
 
   cubeobj2, err = NewGLCube(cubeProgram)
   // cubeobj2.absoluteTransform.ScaleMut(1.5, 0.5, 0.5)
-  cubeobj2.absoluteTransform.TranslateMut(0.5, 0.5, -5.5)
+  cubeobj2.absoluteTransform.Translate(0.5, 0.5, -5.5)
   if err != nil {
     panic(err)
   }
@@ -280,7 +279,7 @@ func (r *Renderer) render(time float32) {
   gl.uniformf(cube_uResolution, r.resolution[0], r.resolution[1])
 
   cubeobj1.Draw(r)
-  cubeobj2.Draw(r)
+  // cubeobj2.Draw(r)
 
   gl.useProgram(program)
   // planeobj2.Draw(r)

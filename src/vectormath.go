@@ -68,14 +68,15 @@ func Matrix4RotateZ(radians float32) Matrix4 {
 }
 
 
-func (m *Matrix4) TranslateMut(x, y, z float32) {
+func (m *Matrix4) Translate(x, y, z float32) *Matrix4 {
   m[12] = m[0]*x + m[4]*y + m[8] *z + m[12]
   m[13] = m[1]*x + m[5]*y + m[9] *z + m[13]
   m[14] = m[2]*x + m[6]*y + m[10]*z + m[14]
   m[15] = m[3]*x + m[7]*y + m[11]*z + m[15]
+  return m
 }
 
-func (m *Matrix4) TranslateZMut(z float32) {
+func (m *Matrix4) TranslateZ(z float32) {
   m[12] = m[8]  * z + m[12]
   m[13] = m[9]  * z + m[13]
   m[14] = m[10] * z + m[14]
@@ -243,4 +244,4 @@ func (m *Matrix4) Scale(x, y, z float32) *Matrix4 {
 
 func sin32(v float32) float32 { return float32(math.Sin(float64(v))) }
 func cos32(v float32) float32 { return float32(math.Cos(float64(v))) }
-
+func abs32(v float32) float32 { return float32(math.Abs(float64(v))) }

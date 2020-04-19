@@ -32,7 +32,7 @@ func NewGLPlane(program *GLProgram) (*GLPlane, error) {
 	}
 
 	// move back a little away from the camera
-	o.absoluteTransform.TranslateZMut(-5)
+	o.absoluteTransform.TranslateZ(-5)
 
 	// get shader positions
 	var err error
