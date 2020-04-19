@@ -12,7 +12,7 @@ const entintMax entint = ^entint(0)
 // have to reuse an index in the array. By changing the generation value when that
 // happens we ensure that we still get a unique ID.
 const (
-	EntityGenerationBits = entint(8)
+  EntityGenerationBits = entint(8)
   EntityGenerationMask = entint((1 << EntityGenerationBits) - 1)
   EntityIndexBits = entint(entintSize) - EntityGenerationBits
   EntityIndexMask = entint((1 << EntityIndexBits) - 1)
@@ -44,36 +44,36 @@ type Ent entint
 const NilEnt = Ent(0)
 
 func (e Ent) Index() entint {
-	return entint(e) & EntityIndexMask
+  return entint(e) & EntityIndexMask
 }
 
 func (e Ent) Generation() uint8 {
-	return uint8((entint(e) >> EntityIndexBits) & EntityGenerationMask)
+  return uint8((entint(e) >> EntityIndexBits) & EntityGenerationMask)
 }
 
 func (e Ent) String() string {
-	return fmt.Sprintf("Ent#%X", entint(e))
+  return fmt.Sprintf("Ent#%X", entint(e))
 }
 
 func (e Ent) GoString() string {
-	return fmt.Sprintf("Ent{%d,%d}", e.Index(), e.Generation())
+  return fmt.Sprintf("Ent{%d,%d}", e.Index(), e.Generation())
 }
 
 func createEnt(index entint, generation uint8) Ent {
-	return Ent(entint(generation) << EntityIndexBits | index)
+  return Ent(entint(generation) << EntityIndexBits | index)
 }
 
 
 
 type EntManager struct {
-	generation  []byte
-	freeIndices EntQueue  // 1-based as Ent#0 == NilEnt
+  generation  []byte
+  freeIndices EntQueue  // 1-based as Ent#0 == NilEnt
 }
 
 func (em *EntManager) Init() {
-	// pre-allocate freeIndices since we will use at least that many slots
+  // pre-allocate freeIndices since we will use at least that many slots
   em.generation = make([]byte, 1, MinimumFreeIndices + 1)  // 1-based
-	em.freeIndices.Items = make([]Ent, 0, MinimumFreeIndices + 1)[:]
+  em.freeIndices.Items = make([]Ent, 0, MinimumFreeIndices + 1)[:]
 }
 
 func (em *EntManager) Alloc() Ent {
@@ -89,13 +89,13 @@ func (em *EntManager) Alloc() Ent {
 }
 
 func (em *EntManager) Free(e Ent) {
-	index := e.Index()
-	em.generation[index]++
-	em.freeIndices.PushBack(Ent(index))
+  index := e.Index()
+  em.generation[index]++
+  em.freeIndices.PushBack(Ent(index))
 }
 
 func (em *EntManager) IsAlive(e Ent) bool {
-	return entint(e) != 0 && em.generation[e.Index()] == e.Generation()
+  return entint(e) != 0 && em.generation[e.Index()] == e.Generation()
 }
 
 

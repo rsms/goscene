@@ -36,12 +36,26 @@ body {
   display: flex;
 }
 
+.webglstats {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  background: rgba(40,40,40,0.8);
+  color: white;
+  padding: 6px 8px;
+  font-size: 11px;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none; -webkit-user-select: none;
+  border-radius: 2px;
+}
+
 </style>
 <script type="text/javascript">(()=>{
 // app initialization data
 const a = window._appinit = {
   time: Date.now(),
-  version: /*VERSION*/"5eff5b633584c992960635df49d537247e982233"/*VERSION*/,
+  version: /*VERSION*/"ebebe2f004c5a86d3f4dbb0165a2fb341b87d24e"/*VERSION*/,
   srcPath: "app",
 }
 if (document.location.hostname == "localhost") {
@@ -67,6 +81,6 @@ document.head.appendChild(script)
 </head>
 <body>
   <div id="loading-message"><p>Loading...</p></div>
-  <canvas width="640" height="480"></canvas>
+  <canvas id="canvas1" width="640" height="480"></canvas>
 </body>
 </html>

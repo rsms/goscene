@@ -1,3 +1,5 @@
+import * as stats from "./stats"
+
 const log = console.log.bind(console)
 
 function assert(cond, msg) {
@@ -23,6 +25,7 @@ const HEventSubscribe   = uint32(2)
     , HMonotime         = uint32(12)  // () -> f64
     , HTime             = uint32(13)  // () -> f64
     , HReadRandom       = uint32(14)  // ([]byte) -> i32
+    , HAnimationStatsUpdate = uint32(15) // () -> ()
       // GL (all these functions takes a JS object as the first parameter; context)
     , HGLdrawingBufferSize = uint32(1000) // () -> i32,i32
     , HGLcanvasSize = uint32(1001) // () -> i32,i32
@@ -43,23 +46,25 @@ const HEventSubscribe   = uint32(2)
     , HGLuniformvf = uint32(1016)
     , HGLuniformvi = uint32(1017)
     , HGLdrawArrays = uint32(1018)
+    , HGLdrawElements = uint32(1019)
 
 // Event IDs
 const EVNone           = 0
-    , EVWindowResize   = 1 << 0
-    , EVPointerMove    = 1 << 1
-    , EVPointerDown    = 1 << 2
-    , EVPointerUp      = 1 << 3
-    , EVAnimationFrame = 1 << 4
+    , EVWindowResize   = 1
+    , EVPointerMove    = 2
+    , EVPointerDown    = 3
+    , EVPointerUp      = 4
+    , EVAnimationFrame = 5
 
-function EVString(events) {
-  let names = []
-  if (events & EVWindowResize)   names.push("EVWindowResize")
-  if (events & EVPointerMove)    names.push("EVPointerMove")
-  if (events & EVPointerDown)    names.push("EVPointerDown")
-  if (events & EVPointerUp)      names.push("EVPointerUp")
-  if (events & EVAnimationFrame) names.push("EVAnimationFrame")
-  return names.join("|")
+function EVString(ev) {
+  switch (ev) {
+  case EVWindowResize:   return "EVWindowResize"
+  case EVPointerMove:    return "EVPointerMove"
+  case EVPointerDown:    return "EVPointerDown"
+  case EVPointerUp:      return "EVPointerUp"
+  case EVAnimationFrame: return "EVAnimationFrame"
+  default:               return "(EV?)"
+  }
 }
 
 
@@ -101,6 +106,10 @@ regHCall("u32_", HEventSubscribe, (mem, events) => {
 
 regHCall("u32_", HEventUnsubscribe, (mem, events) => {
   host.eventUnsubscribe(events)
+})
+
+regHCall("__", HAnimationStatsUpdate, mem => {
+  host.updateAnimationStats(performance.now())
 })
 
 // HPixelRatio: scale of display points to pixels for the current window.
@@ -215,6 +224,10 @@ regHCall("jvu32_", HGLvertexAttribPointer, (mem, gl, argc, argaddr) => {
 
 regHCall("ju32x3_", HGLdrawArrays, (mem, gl, mode, first, count) => {
   gl.drawArrays(mode, first, count)
+})
+
+regHCall("ju32x4_", HGLdrawElements, (mem, gl, mode, count, typ, offset) => {
+  gl.drawElements(mode, count, typ, offset)
 })
 
 for (let [size,msg] of [[2,HGLuniformMatrix2fv],[3,HGLuniformMatrix3fv],[4,HGLuniformMatrix4fv]]) {
@@ -348,25 +361,15 @@ class GoMemory {
 
 const host = new class Host {
   constructor() {
-    this.copyBuffer = new ArrayBuffer(4096)
-    this.copyBufferU8 = new Uint8Array(this.copyBuffer)
-    this.copyBufferF32 = new Float32Array(this.copyBuffer)
-
     this.eventMsgBuf  = new ArrayBuffer(4096)
     this.eventMsgView = new DataView(this.eventMsgBuf)
 
     this.wasmInstance = null
 
-    this.eventSubMask = 0      // subscribed events (bitmask)
-    this.eventQueueMask = 0    // queued events
-    this.eventData = new Map() // queued event data keyed by event
-
-    // container holding all current persistent events
-    this.persistentEvents = new Map()
+    this.eventSubscriptions = new Set()  // subscribed events
+    this.transientEvents = new Map() // queued event data keyed by event code
+    this.persistentEvents = new Map()  // active persistent events keyed by event code
     this.persistentEventsVersion = 0  // increments when persistentEvents changes
-
-    // map of persistent events, ORd with this.eventQueueMask
-    this.persistentEventMask = 0
 
     this.runloopTickFunc = null
 
@@ -393,6 +396,10 @@ const host = new class Host {
         }
       }
     }
+
+    bindHostcall("__", (mem, sp, f) => {
+      f(mem)
+    })
 
     bindHostcall("_f64", (mem, sp, f) => {
       mem.setFloat64(sp, f(mem))
@@ -439,6 +446,15 @@ const host = new class Host {
       f(mem, obj1, v1, v2, v3)
     })
 
+    bindHostcall("ju32x4_", (mem, sp, f) => {
+      const obj1 = mem.getJSObject(sp)
+      const v1 = mem.getUint32(sp + 8)
+      const v2 = mem.getUint32(sp + 12)
+      const v3 = mem.getUint32(sp + 16)
+      const v4 = mem.getUint32(sp + 20)
+      f(mem, obj1, v1, v2, v3, v4)
+    })
+
     bindHostcall(["jx2vi32_", "jx2vu32_", "jx2vf32_"], (mem, sp, f) => {
       const obj1 = mem.getJSObject(sp)
       const obj2 = mem.getJSObject(sp + 8)
@@ -481,34 +497,36 @@ const host = new class Host {
     this.initEvents() // XXX
   }
 
-  log() {
-    console.log.apply(console, arguments)
+  log() { console.log.apply(console, arguments) }
+  error(err) { console.error(typeof err == "object" && err.stack ? err.stack : String(err)) }
+
+
+  enableAnimationStats() {
+    if (!this._animationStats) {
+      const s = this._animationStats = new stats.Stats()
+      // add Go WASM memory size stats
+      s.addGenericPanel(
+        { updateInterval: 1000 },
+        () => `Go ${stats.fmtByteSize(this.gomem.check().buf.byteLength)}`
+      )
+      s.mount(document.body)
+    }
   }
 
-  error(err) {
-    console.error(typeof err == "object" && err.stack ? err.stack : String(err))
+  disableAnimationStats() {
+    if (this._animationStats) {
+      this._animationStats.unmount()
+      this._animationStats = null
+    }
   }
 
-  get windowWidth() { return window.innerWidth }
-  get windowHeight() { return window.innerHeight }
-
-  get onWindowResize() { return null }
-  set onWindowResize(f) {
-    window.addEventListener("resize", f)
+  updateAnimationStats(time) {
+    if (!this._animationStats) {
+      this.enableAnimationStats()
+    }
+    this._animationStats.update(time)
   }
 
-  get onPointerMove() { return null }
-  set onPointerMove(f) {
-    window.addEventListener("pointermove", f)
-  }
-
-  get pixelScale() { return window.devicePixelRatio || 1 }
-
-  monotime() {
-    // Go does not export a monotonic timer, even though runtime.nanotime() in WASM is backed
-    // by performance.now() (but it's internal and not exposed in Go.)
-    return performance.now()
-  }
 
   getContext(canvas, contextType) {
     return canvas.getContext(contextType)
@@ -587,38 +605,35 @@ const host = new class Host {
     log("host.eventSubscribe", events, EVString(events))
     for (let k in this.events) {
       let e = this.events[k]
-      if (events & e.ev && (this.eventSubMask & e.ev) == 0) {
+      if (events & e.ev && !this.eventSubscriptions.has(e.ev)) {
+        this.eventSubscriptions.add(e.ev)
         e.enable()
       }
     }
-    this.eventSubMask |= events
   }
 
   eventUnsubscribe(events) {
     log("host.eventUnsubscribe", events, EVString(events))
     for (let e of this.events) {
-      if (events & e.ev && this.eventSubMask & e.ev) {
+      if (events & e.ev && this.eventSubMask.has(e.ev)) {
         e.disable()
-        this.eventData.delete(e.ev)
+        this.eventSubscriptions.delete(e.ev)
+        this.transientEvents.delete(e.ev)
+        this.persistentEvents.delete(e.ev)
       }
     }
-    this.eventQueueMask |= ~events
-    this.eventSubMask |= ~events
   }
 
   eventEnqueue(ev, data) {
     // log(`eventEnqueue ${EVString(ev)}`, data)
     assert(!data || data instanceof Array)
-    this.eventQueueMask |= ev
-    this.eventData.set(ev, data)
+    this.transientEvents.set(ev, data)
     if (this.runloopWake) {
       this.runloopWakeA()
     }
   }
 
   enablePersistentEvent(ev, data) {
-    this.persistentEventMask |= ev
-    this.eventQueueMask |= ev
     this.persistentEvents.set(ev, data)
     this.persistentEventsVersion++
     if (this.runloopWake) {
@@ -627,8 +642,6 @@ const host = new class Host {
   }
 
   disablePersistentEvent(ev) {
-    this.persistentEventMask |= ~ev
-    this.eventQueueMask |= ev
     this.persistentEvents.delete(ev)
     this.persistentEventsVersion++
   }
@@ -666,10 +679,9 @@ const host = new class Host {
 
     // address/offset into gomem
     let a = msgbufaddr
-    const TIME        = a ; a += 4
-    const EVENT_MASK  = a ; a += 4
-    const EVENT_COUNT = a ; a += 4
-    const EVENT_DATA  = a // until msgbufaddr + msgbufsize
+    const TIME        = a
+    const EVENT_COUNT = TIME + 8
+    const EVENT_DATA  = EVENT_COUNT + 4 // until msgbufaddr + msgbufsize
 
     // number of p. events written in gomem. This needs to be tracked separately from
     // this.persistentEvents.size as this.persistentEvents may change while we write
@@ -727,19 +739,17 @@ const host = new class Host {
       }
 
       // write input
-      mem.setFloat32(TIME, (performance.now() - timeOrigin) / 1000)
-      mem.setUint32(EVENT_MASK, this.eventQueueMask)
-      mem.setUint32(EVENT_COUNT, persistentEventInMemCount + this.eventData.size)
+      mem.setFloat64(TIME, (performance.now() - timeOrigin) / 1000)
+      mem.setUint32(EVENT_COUNT, persistentEventInMemCount + this.transientEvents.size)
 
       // write transient events
-      if (this.eventData.size > 0) {
+      if (this.transientEvents.size > 0) {
         let addr = transientEventDataAddr
-        for (let [ev, data] of this.eventData) {
+        for (let [ev, data] of this.transientEvents) {
           addr = writeEventData(mem, addr, ev, data)
         }
         // reset (in case gocb sets new events)
-        this.eventQueueMask = this.eventQueueMask & this.persistentEventMask
-        this.eventData.clear()
+        this.transientEvents.clear()
       }
 
       // reset wake signal
@@ -748,7 +758,7 @@ const host = new class Host {
       // call into go
       gocb()
 
-      if (this.eventQueueMask != 0) {
+      if (this.persistentEvents.size > 0) {
         // there are still events queued
         requestAnimationFrame(tick)
       } else {

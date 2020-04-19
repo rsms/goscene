@@ -2,13 +2,13 @@ package main
 
 import (
   "syscall/js"
-  "bytes"
   "unsafe"
 )
 
 // see https://godoc.org/syscall/js
 
-// implemented in javascript
+// implemented in host_js.s + host.js
+func hostcall___(msg uint32)
 func hostcall__f64(msg uint32) float64
 func hostcall__u32x2(msg uint32) (uint32, uint32)
 func hostcall_j_i32(msg uint32, v1 js.Value) int32
@@ -17,6 +17,7 @@ func hostcall_jf32_(msg uint32, v1 js.Value, v2 float32)
 func hostcall_ju32_(msg uint32, v1 js.Value, v2 uint32)
 func hostcall_ju32j_(msg uint32, v1 js.Value, v2 uint32, v3 js.Value)
 func hostcall_ju32x3_(msg uint32, v1 js.Value, v2,v3,v4 uint32)
+func hostcall_ju32x4_(msg uint32, v1 js.Value, v2,v3,v4,v5 uint32)
 func hostcall_jvf32_(msg uint32, v1 js.Value, v... float32)
 func hostcall_jvi32_(msg uint32, v1 js.Value, v... int32)
 func hostcall_jvu32_(msg uint32, v1 js.Value, v... uint32)
@@ -24,20 +25,22 @@ func hostcall_jx2_(msg uint32, v1 js.Value, v2 js.Value)
 func hostcall_jx2vf32_(msg uint32, v1,v2 js.Value, v... float32)
 func hostcall_jx2vi32_(msg uint32, v1,v2 js.Value, v... int32)
 func hostcall_jx2vu32_(msg uint32, v1,v2 js.Value, v... uint32)
+func hostcall_u32_(msg uint32, v1 uint32)
 func hostcall_vi32_i32(msg uint32, v... int32) int32
 func hostcall_vu8_i32(msg uint32, v... uint8) int32
-func hostcall_u32_(msg uint32, v1 uint32)
 
-
+// hostcall message constants
 const (
   // global
-  HEventSubscribe   = uint32(2)
-  HEventUnsubscribe = uint32(3)
-  HWindowSize       = uint32(10)  // () -> i32 (i16x2)
-  HPixelRatio       = uint32(11)  // () -> f64
-  HMonotime         = uint32(12)  // () -> f64
-  HTime             = uint32(13)  // () -> f64
-  HReadRandom       = uint32(14)  // ([]byte) -> i32
+  HEventSubscribe       = uint32(2)
+  HEventUnsubscribe     = uint32(3)
+  HWindowSize           = uint32(10)  // () -> i32 (i16x2)
+  HPixelRatio           = uint32(11)  // () -> f64
+  HMonotime             = uint32(12)  // () -> f64
+  HTime                 = uint32(13)  // () -> f64
+  HReadRandom           = uint32(14)  // ([]byte) -> i32
+  HAnimationStatsUpdate = uint32(15)  // () -> ()
+
   // GL (all these functions takes a JS object as the first parameter; context)
   HGLdrawingBufferSize = uint32(1000) // () -> i32,i32
   HGLcanvasSize = uint32(1001) // () -> i32,i32
@@ -58,13 +61,14 @@ const (
   HGLuniformvf = uint32(1016)
   HGLuniformvi = uint32(1017)
   HGLdrawArrays = uint32(1018)
+  HGLdrawElements = uint32(1019)
 )
 
-// event
+// Events
 type Event uint32
-const EVNone = Event(iota)  // so iota is reset to 0 below
 const (
-  EVWindowResize = Event(1 << iota)
+  EVNone = Event(iota)
+  EVWindowResize
   EVPointerMove
   EVPointerDown
   EVPointerUp
@@ -72,16 +76,14 @@ const (
 )
 
 func (e Event) String() string {
-  s := ""
-  if (e & EVWindowResize != 0)    { s += "|EVWindowResize" }
-  if (e & EVPointerMove != 0)     { s += "|EVPointerMove" }
-  if (e & EVPointerDown != 0)     { s += "|EVPointerDown" }
-  if (e & EVPointerUp != 0)       { s += "|EVPointerUp" }
-  if (e & EVAnimationFrame != 0)  { s += "|EVAnimationFrame" }
-  if len(s) == 0 {
-    return s
+  switch e {
+  case EVWindowResize:   return "EVWindowResize"
+  case EVPointerMove:    return "EVPointerMove"
+  case EVPointerDown:    return "EVPointerDown"
+  case EVPointerUp:      return "EVPointerUp"
+  case EVAnimationFrame: return "EVAnimationFrame"
+  default:               return "(EV?)"
   }
-  return s[1:]
 }
 
 
@@ -99,21 +101,14 @@ type Pointer struct {
 
 
 type HostEnv struct {
-  jsv             js.Value
-  windowWidth     uint32    // width of host window in display points
-  windowHeight    uint32    // height of host window in display points
-  pixelRatio      float32   // display point to pixel ratio
-  copyBuffer      bytes.Buffer  // local buffer for copying values to JS
-  jsCopyBufferU8  js.Value  // remote buffer
-  jsCopyBufferF32 js.Value  // remote buffer
-  runloopStopCh   chan bool // used by RunLoop() to signal stop
-  events          EventSource
-  scenetime       float32   // monotonically incrementing time, in seconds
-  pointer         Pointer
-
-  // // Events (legacy)
-  // onWindowResize  EventSource
-  // onPointerMove   EventSource
+  jsv           js.Value  // reference to the Host JS object in the host runtime
+  windowWidth   uint32    // width of host window in display points
+  windowHeight  uint32    // height of host window in display points
+  pixelRatio    float32   // display point to pixel ratio
+  pointer       Pointer   // input pointer
+  scenetime     float64   // monotonically incrementing time, in seconds
+  runloopStopCh chan bool // used by RunLoop() to signal stop
+  events        EventSource
 }
 
 func CreateHostEnv(jsv js.Value) *HostEnv {
@@ -121,11 +116,6 @@ func CreateHostEnv(jsv js.Value) *HostEnv {
     jsv: jsv,
     pixelRatio: 1.0,
   }
-
-  // setup copy buffers, used to copy chunks of data between WASM and JS
-  h.copyBuffer.Grow(jsv.Get("copyBuffer").Get("byteLength").Int())
-  h.jsCopyBufferU8 = jsv.Get("copyBufferU8")
-  h.jsCopyBufferF32 = jsv.Get("copyBufferF32")
 
   h.events.Enable = func (ev Event) {
     // called when the first handler for ev was added
@@ -190,6 +180,8 @@ func (h *HostEnv) eventUnsubscribe(ev Event) {
 }
 
 
+// Monotime returns a timestamp in seconds with high resolution that is guaranteed to
+// increment for every call, unlike Time() which could go backwards if the computer clock changes.
 func (h *HostEnv) Monotime() float64 {
   // Note: float32 as seconds gives us 97 days before we completely run out of precision.
   // A float32 for seconds will run out of millisecond precision after about 24 days (2095000s)
@@ -217,6 +209,10 @@ func (h *HostEnv) ReadRandom(buf []byte) int {
 
 func (h *HostEnv) dispatchEvent(ev Event, data []uint32) {
   h.events.Trigger(ev, data...)
+}
+
+func (h *HostEnv) UpdateAnimationStats() {
+  hostcall___(HAnimationStatsUpdate)
 }
 
 
@@ -254,23 +250,16 @@ func (h *HostEnv) RunLoop() {
 
   // byte offsets into msgbuf (must match constants in host.js)
   const TIME         = 0
-  const EVENT_MASK   = 4
-  const EVENT_COUNT  = 8
-  const EVENT_DATA   = 12
+  const EVENT_COUNT  = TIME + 8
+  const EVENT_DATA   = EVENT_COUNT + 4
   const MAX_VALCOUNT = 32
 
   cb := js.FuncOf(func(this js.Value, args []js.Value) interface{} {
-    time    := *(*float32)(unsafe.Pointer(&msgbuf[TIME]))
-    // events  := (*uint32)(unsafe.Pointer(&msgbuf[EVENT_MASK]))
-    evcount := *(*uint32)(unsafe.Pointer(&msgbuf[EVENT_COUNT]))
-
-    h.scenetime = time
-
+    h.scenetime = *(*float64)(unsafe.Pointer(&msgbuf[TIME]))
+    evcount    := *(*uint32)(unsafe.Pointer(&msgbuf[EVENT_COUNT]))
+    dataptr    := uintptr(unsafe.Pointer(&msgbuf[EVENT_DATA]))
     // logf("runloop callback. time: %g, events: %s, evcount: %v",
     //   time, Event(*events), evcount)
-
-    // read events and their data
-    dataptr := uintptr(unsafe.Pointer(&msgbuf[EVENT_DATA]))
     for i := uint32(0); i < evcount; i++ {
       ev := *(*Event)(unsafe.Pointer(dataptr))
       dataptr += 4

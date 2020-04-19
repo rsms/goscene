@@ -11,12 +11,12 @@ const IntSize uint = 32 << (^uint(0) >> 63)  // bits of int on target platform
 const UintMax uint = ^uint(0)
 
 // func checkJSNotNull(v js.Value) {
-// 	if v.IsNull() {
-// 		panic("unexpected null js.Value")
-// 	}
-// 	if v.IsNull() || v.IsUndefined() {
-// 		panic("unexpected undefined js.Value")
-// 	}
+//  if v.IsNull() {
+//    panic("unexpected null js.Value")
+//  }
+//  if v.IsNull() || v.IsUndefined() {
+//    panic("unexpected undefined js.Value")
+//  }
 // }
 
 func logf(format string, v... interface{}) {
@@ -39,7 +39,7 @@ func max(x, y int) int {
 }
 
 func assert(cond bool) {
-	if !cond {
-		panic("assertion error")
-	}
+  if !cond {
+    panic("assertion error")
+  }
 }

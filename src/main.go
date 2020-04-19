@@ -22,6 +22,7 @@ func main() {
     panic(err)
   }
   r.init()
+  r.start()
 
   // resize canvas when window size changes
   host.events.Listen(EVWindowResize, func (ev Event, xy ...uint32) {

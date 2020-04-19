@@ -20,6 +20,10 @@ TEXT ·hostcall_j_i32(SB), NOSPLIT, $0
   CallImport
   RET
 
+TEXT ·hostcall___(SB), NOSPLIT, $0
+  CallImport
+  RET
+
 TEXT ·hostcall_j_u32x2(SB), NOSPLIT, $0
   CallImport
   RET
@@ -65,6 +69,10 @@ TEXT ·hostcall_jx2vi32_(SB), NOSPLIT, $0
   RET
 
 TEXT ·hostcall_ju32x3_(SB), NOSPLIT, $0
+  CallImport
+  RET
+
+TEXT ·hostcall_ju32x4_(SB), NOSPLIT, $0
   CallImport
   RET
 
